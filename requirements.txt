@@ -1,0 +1,6 @@
+transformers>=4.30.0
+datasets
+torch
+numpy
+trl
+peft
