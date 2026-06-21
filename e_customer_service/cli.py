@@ -13,7 +13,7 @@ from .modeling import load_model_and_tokenizer
 from .paths import build_run_paths, default_run_name, ensure_run_dirs, write_json
 from .trainer import create_peft_config, create_sft_config, run_training
 
-
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +32,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--gradient_accumulation_steps", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--r", type=int, default=64, help="LoRA rank")
+    p.add_argument("--lora_alpha", type=int, default=128, help="LoRA alpha")
+    p.add_argument(
+        "--target_modules",
+        nargs="+",
+        default=None,
+        help="LoRA target modules, separated by spaces or commas",
+    )
     p.add_argument("--no-bf16", action="store_false", dest="bf16", help="Use fp16 instead of bf16")
     p.add_argument(
         "--no-local_files_only",
@@ -57,6 +65,16 @@ def resolve_run_name(args: argparse.Namespace) -> str:
     if args.output_dir:
         return os.path.basename(os.path.normpath(args.output_dir))
     return default_run_name(qlora=args.qlora)
+
+
+def normalize_target_modules(target_modules: Optional[List[str]]) -> Optional[List[str]]:
+    if target_modules is None:
+        return None
+
+    modules = []
+    for item in target_modules:
+        modules.extend(module.strip() for module in item.split(",") if module.strip())
+    return modules
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -111,11 +129,6 @@ def main(argv: Optional[List[str]] = None) -> None:
                 logger.info("First sample templated (raw): %s", templated)
                 logger.info("First sample templated (repr): %s", repr(templated))
                 logger.info("Contains '<|im_end|>'?: %s", "<|im_end|>" in templated)
-                try:
-                    toks = tokenizer.tokenize(templated)
-                    logger.info("First templated tokens (first 120): %s", toks[:120])
-                except Exception as e:
-                    logger.info("Failed to tokenize templated text: %s", e)
     except Exception as e:
         logger.warning("Failed to print templated first sample: %s", e)
 
@@ -123,7 +136,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     train_dataset = ds["train"]
     eval_dataset = ds["test"]
 
-    peft_config = create_peft_config()
+    peft_config = create_peft_config(
+        r=args.r,
+        lora_alpha=args.lora_alpha,
+        target_modules=normalize_target_modules(args.target_modules),
+    )
     training_args = create_sft_config(
         output_dir=os.path.abspath(paths["sft_checkpoints_dir"]),
         logging_dir=os.path.abspath(paths["sft_logs_dir"]),

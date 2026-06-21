@@ -2,25 +2,36 @@
 import argparse
 import json
 import os
-import sys
 
 import torch
 from peft import AutoPeftModelForCausalLM
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, BitsAndBytesConfig, pipeline
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-from eval_generate import read_jsonl, truncate_after_punct_before_bad
 from e_customer_service.data import format_messages
+from e_customer_service.eval_utils import read_jsonl, truncate_after_punct_before_bad
 from e_customer_service.paths import build_run_paths, default_run_name, ensure_run_dirs
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def create_bnb_config(args):
+    if not args.qlora:
+        return None
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type=args.bnb_4bit_quant_type,
+        bnb_4bit_compute_dtype=args.bnb_4bit_compute_dtype,
+        bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
+    )
+
+
+def resolve_output_path(out_file: str, default_dir) -> str:
+    if not os.path.isabs(out_file) and not os.path.dirname(out_file):
+        return os.path.join(default_dir, out_file)
+    return out_file
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Evaluate a DPO adapter")
     parser.add_argument("--output-root", default="output", help="Root directory for all experiment runs")
     parser.add_argument("--run-name", default=None, help="Experiment run name under output/runs")
     parser.add_argument(
@@ -36,39 +47,24 @@ def main():
     parser.add_argument("--bnb-4bit-quant-type", default="nf4", help="BitsAndBytes 4bit quant type")
     parser.add_argument("--bnb-4bit-compute-dtype", default="bfloat16", help="Compute dtype for 4-bit")
     parser.add_argument("-dq", "--bnb-4bit-use-double-quant", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     run_name = args.run_name or default_run_name()
     paths = build_run_paths(args.output_root, run_name)
     ensure_run_dirs(paths)
 
     model_dir = args.model_dir or str(paths["dpo_final_adapter_dir"])
-    out_path = args.out_file
-    if not os.path.isabs(out_path) and not os.path.dirname(out_path):
-        out_path = os.path.join(paths["dpo_eval_dir"], out_path)
+    out_path = resolve_output_path(args.out_file, paths["dpo_eval_dir"])
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-
-    bnb_cfg = None
-    if args.qlora:
-        bnb_cfg = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type=args.bnb_4bit_quant_type,
-            bnb_4bit_compute_dtype=args.bnb_4bit_compute_dtype,
-            bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
-        )
 
     model = AutoPeftModelForCausalLM.from_pretrained(
         model_dir,
         is_trainable=False,
         device_map=args.device_map,
         torch_dtype=torch.bfloat16,
-        quantization_config=bnb_cfg,
+        quantization_config=create_bnb_config(args),
     )
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_dir,
-        trust_remote_code=True,
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token_id is not None:
@@ -79,7 +75,7 @@ def main():
     gen = pipeline("text-generation", model=model, tokenizer=tokenizer, trust_remote_code=True)
 
     with open(out_path, "w", encoding="utf-8") as out_f:
-        for obj in tqdm(list(read_jsonl(args.val_file)), desc="Eval"):
+        for obj in tqdm(list(read_jsonl(args.val_file)), desc="DPO Eval"):
             raw = obj.get("prompt") or obj.get("messages") or []
             prompt_model = format_messages(
                 tokenizer,

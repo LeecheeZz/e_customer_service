@@ -3,21 +3,14 @@
 import argparse
 import json
 import os
-import sys
 from typing import List
 
 import torch
 from datasets import Dataset
-from peft import PeftModel
+from peft import AutoPeftModelForCausalLM
 from transformers import AutoTokenizer, BitsAndBytesConfig
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
 from e_customer_service.data import format_messages
-from e_customer_service.modeling import load_model_and_tokenizer
 from e_customer_service.paths import build_run_paths, default_run_name, ensure_run_dirs, write_json
 
 
@@ -57,10 +50,20 @@ def build_dataset(dpo_file: str, tokenizer):
     return examples
 
 
+def create_bnb_config(args):
+    if not args.qlora:
+        return None
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type=args.bnb_4bit_quant_type,
+        bnb_4bit_compute_dtype=args.bnb_4bit_compute_dtype,
+        bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
+    )
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(description="Train DPO from an SFT adapter")
     p.add_argument("--dpo-file", default="dpo_pairs.jsonl")
-    p.add_argument("--model-path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
     p.add_argument("--output-root", default="output", help="Root directory for all experiment runs")
     p.add_argument("--run-name", default=None, help="Experiment run name under output/runs")
     p.add_argument(
@@ -78,6 +81,7 @@ def main(argv=None):
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--gradient-accumulation-steps", type=int, default=8)
     p.add_argument("--learning-rate", type=float, default=5e-6)
+    p.add_argument("--device-map", default="auto")
     p.add_argument("--qlora", action="store_true")
     p.add_argument("--bnb-4bit-quant-type", default="nf4")
     p.add_argument("--bnb-4bit-compute-dtype", default="bfloat16")
@@ -92,34 +96,15 @@ def main(argv=None):
 
     adapter_dir = args.adapter_dir or str(paths["sft_final_adapter_dir"])
 
-    bnb_cfg = None
-    if args.qlora:
-        bnb_cfg = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type=args.bnb_4bit_quant_type,
-            bnb_4bit_compute_dtype=args.bnb_4bit_compute_dtype,
-            bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
-        )
-
-    print("---------------Loading base model-----------------")
-    model, _ = load_model_and_tokenizer(
-        args.model_path,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        local_files_only=True,
-        load_in_4bit=args.qlora,
-        bnb_config=bnb_cfg,
-    )
-    model = PeftModel.from_pretrained(
-        model,
+    print("Loading SFT adapter:", adapter_dir)
+    model = AutoPeftModelForCausalLM.from_pretrained(
         adapter_dir,
         is_trainable=True,
+        device_map=args.device_map,
+        torch_dtype=torch.bfloat16,
+        quantization_config=create_bnb_config(args),
     )
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        adapter_dir,
-        trust_remote_code=True,
-    )
+    tokenizer = AutoTokenizer.from_pretrained(adapter_dir, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token_id is not None:
@@ -127,18 +112,15 @@ def main(argv=None):
         model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     dataset = build_dataset(args.dpo_file, tokenizer)
-    if isinstance(dataset, list):
-        try:
-            dataset = Dataset.from_list(dataset)
-        except Exception as e:
-            print("无法将生成的 list 转换为 datasets.Dataset，请安装 datasets 库。错误：", e)
-            sys.exit(1)
+    try:
+        dataset = Dataset.from_list(dataset)
+    except Exception as e:
+        raise SystemExit(f"无法将生成的 list 转换为 datasets.Dataset，请安装 datasets 库。错误：{e}") from e
 
     try:
         from trl import DPOConfig, DPOTrainer
     except Exception as e:
-        print("无法从 trl 导入 DPOTrainer/DPOConfig，请确认已安装支持 DPO 的 trl 版本。错误：", e)
-        sys.exit(1)
+        raise SystemExit(f"无法从 trl 导入 DPOTrainer/DPOConfig，请确认已安装支持 DPO 的 trl 版本。错误：{e}") from e
 
     dpo_args = DPOConfig(
         output_dir=os.path.abspath(paths["dpo_checkpoints_dir"]),
@@ -184,6 +166,7 @@ def main(argv=None):
 
     orig_log = getattr(trainer, "log", None)
     if orig_log is not None:
+
         def _log_wrapper(logs, *args, **kwargs):
             try:
                 return orig_log(logs)
@@ -192,6 +175,7 @@ def main(argv=None):
                     return orig_log(*((logs,) + args), **kwargs)
                 except Exception:
                     return None
+
         trainer.log = _log_wrapper
 
     print("Trainer created, starting DPO training...")

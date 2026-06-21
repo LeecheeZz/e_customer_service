@@ -37,27 +37,27 @@ def create_sft_config(output_dir: str, **kwargs) -> SFTConfig:
 
     Additional kwargs override the defaults.
     """
-    params = dict(
-        output_dir=output_dir,
-        num_train_epochs=1,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=16,
-        learning_rate=1e-4,
-        weight_decay=0.01,
-        lr_scheduler_type="cosine",
-        warmup_steps=20,
-        fp16=False,
-        bf16=True,
-        save_strategy="steps",
-        save_steps=100,
-        save_total_limit=2,
-        eval_strategy="steps",
-        eval_steps=5,
-        logging_steps=5,
-        report_to="none",
-        dataloader_num_workers=4,
-        packing=False,
-    )
+    params = {
+        "output_dir": output_dir,
+        "num_train_epochs": 1,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 16,
+        "learning_rate": 1e-4,
+        "weight_decay": 0.01,
+        "lr_scheduler_type": "cosine",
+        "warmup_steps": 20,
+        "fp16": False,
+        "bf16": True,
+        "save_strategy": "steps",
+        "save_steps": 100,
+        "save_total_limit": 2,
+        "eval_strategy": "steps",
+        "eval_steps": 5,
+        "logging_steps": 5,
+        "report_to": "none",
+        "dataloader_num_workers": 4,
+        "packing": False,
+    }
 
     params.update(kwargs)
     return SFTConfig(**params)
