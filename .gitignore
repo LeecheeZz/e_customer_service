@@ -24,7 +24,7 @@ env/
 annotation_candidates/
 
 # Model outputs and checkpoints
-output*/
+output/
 checkpoint-*/
 *.safetensors
 *.bin

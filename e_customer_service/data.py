@@ -1,7 +1,6 @@
 import json
 from typing import Any, Dict, List
 
-from datasets import Dataset
 
 
 def load_jsonl(path: str) -> List[Dict]:
@@ -23,15 +22,55 @@ def load_jsonl(path: str) -> List[Dict]:
     return samples
 
 
-def apply_template(tokenizer: Any, example: Dict) -> Dict:
-    """Apply the model's chat template to an example.
+def format_messages(
+    tokenizer: Any,
+    messages: Any,
+    *,
+    add_generation_prompt: bool = False,
+    enable_thinking: bool = False,
+) -> str:
+    """Format chat messages with the tokenizer's chat template.
 
-    The function mirrors the behavior from the original demo: it calls
-    `tokenizer.apply_chat_template` and strips empty thinking markers.
+    Keeps training and inference prompts consistent across SFT, DPO, and eval
+    scripts. If a tokenizer has no chat template helper, fall back to a simple
+    role/content transcript so non-chat tokenizers can still run.
     """
-    text = tokenizer.apply_chat_template(
+    if isinstance(messages, str):
+        return messages
+    if not isinstance(messages, list):
+        raise ValueError("messages must be a string or a list of role/content dicts")
+
+    if hasattr(tokenizer, "apply_chat_template"):
+        try:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+                enable_thinking=enable_thinking,
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=add_generation_prompt,
+            )
+
+    parts = []
+    for message in messages:
+        role = message.get("role", "")
+        content = message.get("content", "")
+        parts.append(f"<{role}>: {content}")
+    return "\n".join(parts)
+
+
+def apply_template(tokenizer: Any, example: Dict) -> Dict:
+    """Apply the model's chat template to an example."""
+    if "messages" not in example:
+        raise ValueError("sample is missing required 'messages' field")
+
+    text = format_messages(
+        tokenizer,
         example["messages"],
-        tokenize=False,
         add_generation_prompt=False,
         enable_thinking=False,
     )
@@ -39,7 +78,7 @@ def apply_template(tokenizer: Any, example: Dict) -> Dict:
     return {"text": text}
 
 
-def samples_to_dataset(samples: List[Dict], tokenizer: Any) -> Dataset:
+def samples_to_dataset(samples: List[Dict], tokenizer: Any):
     """Convert parsed samples to a `datasets.Dataset` and apply template.
 
     Args:
@@ -49,6 +88,8 @@ def samples_to_dataset(samples: List[Dict], tokenizer: Any) -> Dataset:
     Returns:
         A `datasets.Dataset` with a single `text` field.
     """
+    from datasets import Dataset
+
     ds = Dataset.from_list(samples)
     ds = ds.map(
         lambda x: apply_template(tokenizer, x),

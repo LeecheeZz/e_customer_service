@@ -6,11 +6,11 @@ from typing import List, Optional
 
 import numpy as np
 import torch
-from transformers import set_seed
-from transformers import BitsAndBytesConfig
+from transformers import BitsAndBytesConfig, set_seed
 
-from .data import load_jsonl, samples_to_dataset
+from .data import format_messages, load_jsonl, samples_to_dataset
 from .modeling import load_model_and_tokenizer
+from .paths import build_run_paths, default_run_name, ensure_run_dirs, write_json
 from .trainer import create_peft_config, create_sft_config, run_training
 
 
@@ -21,7 +21,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="SFT training wrapper")
     p.add_argument("--model_path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
     p.add_argument("--train_file", default="train_sft.jsonl")
-    p.add_argument("--output_dir", default="output_sft_QLoRA")
+    p.add_argument("--output_root", default="output", help="Root directory for all experiment runs")
+    p.add_argument("--run_name", default=None, help="Experiment run name under output/runs")
+    p.add_argument(
+        "--output_dir",
+        default=None,
+        help="Deprecated: use --output_root and --run_name instead; treated as a run name if set",
+    )
     p.add_argument("--epochs", type=int, default=2)
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--gradient_accumulation_steps", type=int, default=16)
@@ -37,31 +43,41 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p.add_argument("--qlora", action="store_true", help="Enable QLoRA 4-bit loading (bitsandbytes)")
     return p.parse_args(argv)
 
+
 def setup_seed(seed: int) -> None:
     set_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
 
+
+def resolve_run_name(args: argparse.Namespace) -> str:
+    if args.run_name:
+        return args.run_name
+    if args.output_dir:
+        return os.path.basename(os.path.normpath(args.output_dir))
+    return default_run_name(qlora=args.qlora)
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
 
     logging.basicConfig(level=logging.INFO)
-
     setup_seed(args.seed)
+
+    run_name = resolve_run_name(args)
+    paths = build_run_paths(args.output_root, run_name)
+    ensure_run_dirs(paths)
 
     torch_dtype = torch.bfloat16 if args.bf16 else torch.float16
 
-    # If user enabled QLoRA, reload model with 4-bit config (bitsandbytes)
     if args.qlora:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=False
+            bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_use_double_quant=False,
         )
-
-        # reload using 4-bit quantization (device_map auto)
         model, tokenizer = load_model_and_tokenizer(
             args.model_path,
             device_map="auto",
@@ -70,12 +86,11 @@ def main(argv: Optional[List[str]] = None) -> None:
             load_in_4bit=True,
             bnb_config=bnb_config,
         )
-
     else:
         model, tokenizer = load_model_and_tokenizer(
             args.model_path,
             torch_dtype=torch_dtype,
-            local_files_only=args.local_files_only
+            local_files_only=args.local_files_only,
         )
 
     samples = load_jsonl(args.train_file)
@@ -83,16 +98,19 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     ds = samples_to_dataset(samples, tokenizer)
 
-    # 打印第一条样本在应用 template 后的效果，便于排查训练时是否包含特殊分隔符或多语言噪声
     try:
         if len(samples) > 0:
             first = samples[0]
             if "messages" in first:
-                templated = tokenizer.apply_chat_template(first["messages"], tokenize=False, add_generation_prompt=False, enable_thinking=False)
+                templated = format_messages(
+                    tokenizer,
+                    first["messages"],
+                    add_generation_prompt=False,
+                    enable_thinking=False,
+                )
                 logger.info("First sample templated (raw): %s", templated)
                 logger.info("First sample templated (repr): %s", repr(templated))
                 logger.info("Contains '<|im_end|>'?: %s", "<|im_end|>" in templated)
-                # 打印分词前若干 token 供排查
                 try:
                     toks = tokenizer.tokenize(templated)
                     logger.info("First templated tokens (first 120): %s", toks[:120])
@@ -102,17 +120,34 @@ def main(argv: Optional[List[str]] = None) -> None:
         logger.warning("Failed to print templated first sample: %s", e)
 
     ds = ds.train_test_split(test_size=0.05, seed=args.seed)
-
     train_dataset = ds["train"]
     eval_dataset = ds["test"]
 
     peft_config = create_peft_config()
-
     training_args = create_sft_config(
-        output_dir=os.path.abspath(args.output_dir),
+        output_dir=os.path.abspath(paths["sft_checkpoints_dir"]),
+        logging_dir=os.path.abspath(paths["sft_logs_dir"]),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+    )
+
+    write_json(
+        paths["sft_dir"] / "config.json",
+        {
+            "stage": "sft",
+            "run_name": run_name,
+            "args": vars(args),
+            "paths": paths,
+        },
+    )
+    write_json(
+        paths["data_manifest_path"],
+        {
+            "train_file": os.path.abspath(args.train_file),
+            "num_train_samples_before_split": len(samples),
+            "split": {"eval_size": 0.05, "seed": args.seed},
+        },
     )
 
     run_training(
@@ -122,8 +157,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         eval_dataset=eval_dataset,
         peft_config=peft_config,
         training_args=training_args,
-        output_dir=os.path.abspath(args.output_dir),
+        output_dir=os.path.abspath(paths["sft_checkpoints_dir"]),
+        save_dir=os.path.abspath(paths["sft_final_adapter_dir"]),
     )
+
+    logger.info("SFT checkpoints saved to %s", paths["sft_checkpoints_dir"])
+    logger.info("SFT final adapter saved to %s", paths["sft_final_adapter_dir"])
 
 
 if __name__ == "__main__":

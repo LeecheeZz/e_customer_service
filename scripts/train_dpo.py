@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Train a model with Direct Preference Optimization (DPO) using a
-JSONL file of preference pairs (prompt + chosen + rejected).
-
-This script attempts to use `trl.DPOTrainer`. If your installed `trl`
-version does not expose `DPOTrainer`, the script will exit with an
-informative message.
-
-Dataset format (one JSON object per line):
-  {
-    "prompt": [ {"role": "user", "content": "..."} ],
-    "chosen": [ {"role": "assistant", "content": "..."} ],
-    "rejected": [ {"role": "assistant", "content": "..."} ]
-  }
-
-Usage example:
-  python scripts/train_dpo.py --dpo-file dpo_pairs.jsonl --model-path /path/to/base --output-dir output_dpo
-"""
+"""Train a model with Direct Preference Optimization (DPO)."""
 import argparse
 import json
 import os
@@ -23,17 +7,18 @@ import sys
 from typing import List
 
 import torch
-
-from peft import AutoPeftModelForCausalLM
-from transformers import BitsAndBytesConfig, AutoTokenizer
 from datasets import Dataset
+from peft import PeftModel
+from transformers import AutoTokenizer, BitsAndBytesConfig
 
-# ensure project root on path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from e_customer_service.data import format_messages
+from e_customer_service.modeling import load_model_and_tokenizer
+from e_customer_service.paths import build_run_paths, default_run_name, ensure_run_dirs, write_json
 
 
 def read_pairs(path: str):
@@ -44,20 +29,13 @@ def read_pairs(path: str):
             yield json.loads(line)
 
 
-def messages_to_text(messages: List[dict], tokenizer):
-    # If tokenizer provides chat template helper, prefer that
-    try:
-        if hasattr(tokenizer, "apply_chat_template"):
-            return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False, enable_thinking=False)
-    except Exception:
-        pass
-    # fallback: join assistant/user content by role
-    parts = []
-    for m in messages:
-        role = m.get("role", "")
-        content = m.get("content", "")
-        parts.append(f"<{role}>: {content}")
-    return "\n".join(parts)
+def messages_to_text(messages: List[dict], tokenizer, *, add_generation_prompt: bool = False):
+    return format_messages(
+        tokenizer,
+        messages,
+        add_generation_prompt=add_generation_prompt,
+        enable_thinking=False,
+    )
 
 
 def build_dataset(dpo_file: str, tokenizer):
@@ -67,12 +45,12 @@ def build_dataset(dpo_file: str, tokenizer):
         chosen_msgs = obj.get("chosen") or obj.get("best") or []
         rejected_msgs = obj.get("rejected") or obj.get("worst") or []
 
-        query = messages_to_text(prompt_msgs, tokenizer)
+        prompt = messages_to_text(prompt_msgs, tokenizer, add_generation_prompt=True)
         chosen = messages_to_text(chosen_msgs, tokenizer)
         rejected = messages_to_text(rejected_msgs, tokenizer)
 
         examples.append({
-            "query": query,
+            "prompt": prompt,
             "chosen": chosen,
             "rejected": rejected,
         })
@@ -82,13 +60,23 @@ def build_dataset(dpo_file: str, tokenizer):
 def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--dpo-file", default="dpo_pairs.jsonl")
-    p.add_argument("--model-path", default="/media/ssd2/lyf/le/e_customer/models/Qwen/Qwen3-8B-Base")
-    p.add_argument("--adapter-dir", default="output_qlora/lora", help="Path to LoRA adapter (directory with adapter_model.safetensors)")
-    p.add_argument("--output-dir", default="output_qlora")
-    p.add_argument("--beta", default=0.3)
+    p.add_argument("--model-path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
+    p.add_argument("--output-root", default="output", help="Root directory for all experiment runs")
+    p.add_argument("--run-name", default=None, help="Experiment run name under output/runs")
+    p.add_argument(
+        "--adapter-dir",
+        default=None,
+        help="SFT adapter dir; defaults to output/runs/<run-name>/sft/final_adapter",
+    )
+    p.add_argument(
+        "--output-dir",
+        default=None,
+        help="Deprecated: use --output-root and --run-name instead; treated as a run name if set",
+    )
+    p.add_argument("--beta", type=float, default=0.3)
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--batch-size", type=int, default=1)
-    p.add_argument("--truncate-after-punct-before-bad", type=int, default=8)
+    p.add_argument("--gradient-accumulation-steps", type=int, default=8)
     p.add_argument("--learning-rate", type=float, default=5e-6)
     p.add_argument("--qlora", action="store_true")
     p.add_argument("--bnb-4bit-quant-type", default="nf4")
@@ -96,9 +84,14 @@ def main(argv=None):
     p.add_argument("-dq", "--bnb-4bit-use-double-quant", action="store_true")
     args = p.parse_args(argv)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    run_name = args.run_name or (
+        os.path.basename(os.path.normpath(args.output_dir)) if args.output_dir else default_run_name()
+    )
+    paths = build_run_paths(args.output_root, run_name)
+    ensure_run_dirs(paths)
 
-    # prepare bnb config if requested
+    adapter_dir = args.adapter_dir or str(paths["sft_final_adapter_dir"])
+
     bnb_cfg = None
     if args.qlora:
         bnb_cfg = BitsAndBytesConfig(
@@ -108,21 +101,30 @@ def main(argv=None):
             bnb_4bit_use_double_quant=bool(args.bnb_4bit_use_double_quant),
         )
 
-    # load model + tokenizer (trainable model)
-    print("---------------Loading model-----------------")
-    model = AutoPeftModelForCausalLM.from_pretrained(
-        args.adapter_dir,      # output_sft_QLoRA/lora
-        is_trainable=True,
+    print("---------------Loading base model-----------------")
+    model, _ = load_model_and_tokenizer(
+        args.model_path,
         device_map="auto",
         torch_dtype=torch.bfloat16,
-        # attn_implementation="flash_attention_2",
-        quantization_config=bnb_cfg,
+        local_files_only=True,
+        load_in_4bit=args.qlora,
+        bnb_config=bnb_cfg,
+    )
+    model = PeftModel.from_pretrained(
+        model,
+        adapter_dir,
+        is_trainable=True,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
-        args.adapter_dir,
+        adapter_dir,
         trust_remote_code=True,
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
+        model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     dataset = build_dataset(args.dpo_file, tokenizer)
     if isinstance(dataset, list):
@@ -132,54 +134,44 @@ def main(argv=None):
             print("无法将生成的 list 转换为 datasets.Dataset，请安装 datasets 库。错误：", e)
             sys.exit(1)
 
-    # try to import DPOTrainer from trl
     try:
-        from trl import DPOTrainer, DPOConfig
+        from trl import DPOConfig, DPOTrainer
     except Exception as e:
         print("无法从 trl 导入 DPOTrainer/DPOConfig，请确认已安装支持 DPO 的 trl 版本。错误：", e)
         sys.exit(1)
 
-    # create peft (LoRA) config and DPO config
-    # peft_config = create_peft_config()
-
     dpo_args = DPOConfig(
-        output_dir=os.path.abspath(args.output_dir),
-        # ========== 数据集与批次 ==========
-        per_device_train_batch_size=args.batch_size,           # 显存不足可设为1或2，通过gradient_accumulation_steps增加有效批次
-        # per_device_eval_batch_size=1,
-        gradient_accumulation_steps=args.truncate_after_punct_before_bad,           # 模拟全局批次大小 = 2*8 = 16
-        # dataloader_num_workers=4,                # 数据加载线程数
+        output_dir=os.path.abspath(paths["dpo_checkpoints_dir"]),
+        logging_dir=os.path.abspath(paths["dpo_logs_dir"]),
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        learning_rate=args.learning_rate,
+        warmup_steps=10,
+        lr_scheduler_type="cosine",
+        weight_decay=0.01,
+        beta=args.beta,
+        num_train_epochs=args.epochs,
+        logging_steps=3,
+        save_strategy="steps",
+        save_steps=100,
+        eval_steps=100,
+        save_total_limit=1,
+        fp16=False,
+        bf16=True,
+        gradient_checkpointing=False,
+        remove_unused_columns=False,
+        report_to="none",
+    )
 
-        # ========== 学习率与优化 ==========
-        learning_rate=args.learning_rate,                      # DPO建议1e-6到1e-5[reference:1]
-        warmup_steps=10,                        # 预热10%的训练步数
-        lr_scheduler_type="cosine",              # 余弦退火学习率调度器
-        # optim="adamw_torch",                     # PyTorch的AdamW优化器[reference:2]
-        weight_decay=0.01,                       # 权重衰减正则化
-
-        # ========== DPO 核心参数 ==========
-        beta=args.beta,                                # 控制与参考模型的偏差，0.1是平衡性能和稳定性的保守选择[reference:3]
-        # loss_type="sigmoid",                     # 常用损失函数
-
-        # ========== 序列长度设置 ==========
-        # max_length=1024,                         # 支持的最大总长度
-        # max_prompt_length=512,                   # prompt最大长度
-        # max_completion_length=512,             # 回答最大长度，通常会自动从max_length和max_prompt_length计算
-
-        # ========== 训练控制 ==========
-        num_train_epochs=args.epochs,                      # 1000条数据，2-3轮足够
-        logging_steps=3,                        # 每10步打印一次日志
-        save_strategy="steps",                   # 按步数进行评估
-        save_steps=100,                          # 每250步保存一次
-        eval_steps=100,                          # 每250步评估一次
-        save_total_limit=1,                      # 只保留最后2个检查点
-
-        # ========== 其他设置 ==========
-        fp16=False,                              # FP16混合精度
-        bf16=True,                               # 30系及以后GPU可开启BF16
-        gradient_checkpointing=False,            # 用计算换显存
-        remove_unused_columns=False,             # 防止删除数据处理时需要的列
-        report_to="none",                        # 不上传日志到云端，可设为'wandb'或'tensorboard'
+    write_json(
+        paths["dpo_dir"] / "config.json",
+        {
+            "stage": "dpo",
+            "run_name": run_name,
+            "args": vars(args),
+            "adapter_dir": adapter_dir,
+            "paths": paths,
+        },
     )
 
     trainer = DPOTrainer(
@@ -188,12 +180,8 @@ def main(argv=None):
         args=dpo_args,
         train_dataset=dataset,
         tokenizer=tokenizer,
-        # peft_config=peft_config,
     )
 
-    # Some trl releases define `log(self, logs)` while `transformers.Trainer`
-    # may call `self.log(logs, start_time)`. Patch instance `log` to accept
-    # an extra positional argument to maintain compatibility.
     orig_log = getattr(trainer, "log", None)
     if orig_log is not None:
         def _log_wrapper(logs, *args, **kwargs):
@@ -209,12 +197,11 @@ def main(argv=None):
     print("Trainer created, starting DPO training...")
     trainer.train()
 
-    # save adapter or final model
-    save_dir = os.path.join(args.output_dir, "dpo")
-    os.makedirs(save_dir, exist_ok=True)
+    save_dir = paths["dpo_final_adapter_dir"]
+    save_dir.mkdir(parents=True, exist_ok=True)
     try:
-        trainer.save_model(save_dir)
-        tokenizer.save_pretrained(save_dir)
+        trainer.save_model(str(save_dir))
+        tokenizer.save_pretrained(str(save_dir))
         print("Saved DPO model to", save_dir)
     except Exception as e:
         print("保存模型失败：", e)

@@ -14,8 +14,36 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Run training (example):
+2. Run SFT training (example):
 
 ```bash
-python sft.py --model_path /path/to/model --train_file train_sft_lf.jsonl --output_dir output
+python sft.py --model_path /root/autodl-tmp/models/Qwen/Qwen3-8B-Base --train_file train_sft.jsonl --output_root output --run_name qlora_default --qlora
+```
+
+Outputs are organized by run:
+
+```text
+output/runs/<run_name>/
+  sft/checkpoints/
+  sft/final_adapter/
+  sft/eval/
+  sft/logs/
+  dpo/checkpoints/
+  dpo/final_adapter/
+  dpo/eval/
+  dpo/logs/
+  artifacts/
+```
+
+3. Evaluate the SFT adapter:
+
+```bash
+python scripts/eval_generate.py --output-root output --run-name qlora_default --qlora
+```
+
+4. Train and evaluate DPO from the SFT adapter:
+
+```bash
+python scripts/train_dpo.py --output-root output --run-name qlora_default --qlora
+python scripts/run_dpo_inference.py --output-root output --run-name qlora_default --qlora
 ```
