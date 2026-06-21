@@ -1,6 +1,0 @@
-{"messages": [{"role": "user", "content": "我在下单后发现价格有变动，可以补差价吗？"}, {"role": "assistant", "content": "user\n我在下单后发现价格有变动，可以补差价吗？"}], "prompt": "<|im_start|>user\n我在下单后发现价格有变动，可以补差价吗？<|im_end|>\n"}
-{"messages": [{"role": "user", "content": "我的快递显示已签收，但我没有收到货，该怎么办？"}, {"role": "assistant", "content": "user\n我的快递显示已签收，但我没有收到货，该怎么办？"}], "prompt": "<|im_start|>user\n我的快递显示已签收，但我没有收到货，该怎么办？<|im_end|>\n"}
-{"messages": [{"role": "user", "content": "想请问这款衣服的尺码偏大还是偏小？"}, {"role": "assistant", "content": "user\n想请问这款衣服的尺码偏大还是偏小？"}], "prompt": "<|im_start|>user\n想请问这款衣服的尺码偏大还是偏小？<|im_end|>\n"}
-{"messages": [{"role": "user", "content": "购买的电子产品开机后出现黑屏，这属于质量问题吗？"}, {"role": "assistant", "content": "user\n购买的电子产品开机后出现黑屏，这属于质量问题吗？"}], "prompt": "<|im_start|>user\n购买的电子产品开机后出现黑屏，这属于质量问题吗？<|im_end|>\n"}
-{"messages": [{"role": "user", "content": "我想申请七天无理由退货，但包装已经拆开了，可以退吗？"}, {"role": "assistant", "content": "user\n我想申请七天无理由退货，但包装已经拆开了，可以退吗？"}], "prompt": "<|im_start|>user\n我想申请七天无理由退货，但包装已经拆开了，可以退吗？<|im_end|>\n"}
-{"messages": [{"role": "user", "content": "购买商品时使用优惠券未生效，该如何解决？"}, {"role": "assistant", "content": "user\n购买商品时使用优惠券未生效，该如何解决？"}], "prompt": "<|im_start|>user\n购买商品时使用优惠券未生效，该如何解决？<|im_end|>\n"}

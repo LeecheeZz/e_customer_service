@@ -24,7 +24,7 @@ from typing import List
 
 import torch
 
-from peft import LoraConfig, PeftModel, AutoPeftModelForCausalLM
+from peft import AutoPeftModelForCausalLM
 from transformers import BitsAndBytesConfig, AutoTokenizer
 from datasets import Dataset
 
@@ -34,12 +34,10 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from e_customer_service.modeling import load_model_and_tokenizer
-from e_customer_service.trainer import create_peft_config
 
 
 def read_pairs(path: str):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
@@ -49,15 +47,15 @@ def read_pairs(path: str):
 def messages_to_text(messages: List[dict], tokenizer):
     # If tokenizer provides chat template helper, prefer that
     try:
-        if hasattr(tokenizer, 'apply_chat_template'):
+        if hasattr(tokenizer, "apply_chat_template"):
             return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False, enable_thinking=False)
     except Exception:
         pass
     # fallback: join assistant/user content by role
     parts = []
     for m in messages:
-        role = m.get('role', '')
-        content = m.get('content', '')
+        role = m.get("role", "")
+        content = m.get("content", "")
         parts.append(f"<{role}>: {content}")
     return "\n".join(parts)
 
@@ -65,37 +63,37 @@ def messages_to_text(messages: List[dict], tokenizer):
 def build_dataset(dpo_file: str, tokenizer):
     examples = []
     for obj in read_pairs(dpo_file):
-        prompt_msgs = obj.get('prompt') or obj.get('messages') or []
-        chosen_msgs = obj.get('chosen') or obj.get('best') or []
-        rejected_msgs = obj.get('rejected') or obj.get('worst') or []
+        prompt_msgs = obj.get("prompt") or obj.get("messages") or []
+        chosen_msgs = obj.get("chosen") or obj.get("best") or []
+        rejected_msgs = obj.get("rejected") or obj.get("worst") or []
 
         query = messages_to_text(prompt_msgs, tokenizer)
         chosen = messages_to_text(chosen_msgs, tokenizer)
         rejected = messages_to_text(rejected_msgs, tokenizer)
 
         examples.append({
-            'query': query,
-            'chosen': chosen,
-            'rejected': rejected,
+            "query": query,
+            "chosen": chosen,
+            "rejected": rejected,
         })
     return examples
 
 
 def main(argv=None):
     p = argparse.ArgumentParser()
-    p.add_argument('--dpo-file', default='dpo_pairs.jsonl')
-    p.add_argument('--model-path', default="/media/ssd2/lyf/le/e_customer/models/Qwen/Qwen3-8B-Base")
-    p.add_argument('--adapter-dir', default='output_qlora/lora', help='Path to LoRA adapter (directory with adapter_model.safetensors)')
-    p.add_argument('--output-dir', default='output_qlora')
-    p.add_argument('--beta', default=0.3)
-    p.add_argument('--epochs', type=int, default=1)
-    p.add_argument('--batch-size', type=int, default=1)
-    p.add_argument('--truncate-after-punct-before-bad', type=int, default=8)
-    p.add_argument('--learning-rate', type=float, default=5e-6)
-    p.add_argument('--qlora', action='store_true')
-    p.add_argument('--bnb-4bit-quant-type', default='nf4')
-    p.add_argument('--bnb-4bit-compute-dtype', default='bfloat16')
-    p.add_argument('-dq', '--bnb-4bit-use-double-quant', action='store_true')
+    p.add_argument("--dpo-file", default="dpo_pairs.jsonl")
+    p.add_argument("--model-path", default="/media/ssd2/lyf/le/e_customer/models/Qwen/Qwen3-8B-Base")
+    p.add_argument("--adapter-dir", default="output_qlora/lora", help="Path to LoRA adapter (directory with adapter_model.safetensors)")
+    p.add_argument("--output-dir", default="output_qlora")
+    p.add_argument("--beta", default=0.3)
+    p.add_argument("--epochs", type=int, default=1)
+    p.add_argument("--batch-size", type=int, default=1)
+    p.add_argument("--truncate-after-punct-before-bad", type=int, default=8)
+    p.add_argument("--learning-rate", type=float, default=5e-6)
+    p.add_argument("--qlora", action="store_true")
+    p.add_argument("--bnb-4bit-quant-type", default="nf4")
+    p.add_argument("--bnb-4bit-compute-dtype", default="bfloat16")
+    p.add_argument("-dq", "--bnb-4bit-use-double-quant", action="store_true")
     args = p.parse_args(argv)
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -118,7 +116,7 @@ def main(argv=None):
         device_map="auto",
         torch_dtype=torch.bfloat16,
         # attn_implementation="flash_attention_2",
-        quantization_config=bnb_cfg, 
+        quantization_config=bnb_cfg,
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -126,33 +124,19 @@ def main(argv=None):
         trust_remote_code=True,
     )
 
-    # load reference model (frozen copy) - load on CPU to save GPU RAM, let accelerate/device_map move it
-    # print("---------------Loading ref model-----------------")
-    # try:
-    #     from transformers import AutoModelForCausalLM
-    #     ref_model = AutoModelForCausalLM.from_pretrained(
-    #         args.model_path,
-    #         torch_dtype=torch.bfloat16,
-    #         device_map='auto',
-    #         local_files_only=True,
-    #     )
-    # except Exception:
-    #     ref_model = None
-
-    # build dataset (ensure a `datasets.Dataset` is provided)
     dataset = build_dataset(args.dpo_file, tokenizer)
     if isinstance(dataset, list):
         try:
             dataset = Dataset.from_list(dataset)
         except Exception as e:
-            print('无法将生成的 list 转换为 datasets.Dataset，请安装 datasets 库。错误：', e)
+            print("无法将生成的 list 转换为 datasets.Dataset，请安装 datasets 库。错误：", e)
             sys.exit(1)
 
     # try to import DPOTrainer from trl
     try:
         from trl import DPOTrainer, DPOConfig
     except Exception as e:
-        print('无法从 trl 导入 DPOTrainer/DPOConfig，请确认已安装支持 DPO 的 trl 版本。错误：', e)
+        print("无法从 trl 导入 DPOTrainer/DPOConfig，请确认已安装支持 DPO 的 trl 版本。错误：", e)
         sys.exit(1)
 
     # create peft (LoRA) config and DPO config
@@ -184,8 +168,8 @@ def main(argv=None):
 
         # ========== 训练控制 ==========
         num_train_epochs=args.epochs,                      # 1000条数据，2-3轮足够
-        logging_steps=3,                        # 每10步打印一次日志            
-        save_strategy='steps',                   # 按步数进行评估
+        logging_steps=3,                        # 每10步打印一次日志
+        save_strategy="steps",                   # 按步数进行评估
         save_steps=100,                          # 每250步保存一次
         eval_steps=100,                          # 每250步评估一次
         save_total_limit=1,                      # 只保留最后2个检查点
@@ -210,7 +194,7 @@ def main(argv=None):
     # Some trl releases define `log(self, logs)` while `transformers.Trainer`
     # may call `self.log(logs, start_time)`. Patch instance `log` to accept
     # an extra positional argument to maintain compatibility.
-    orig_log = getattr(trainer, 'log', None)
+    orig_log = getattr(trainer, "log", None)
     if orig_log is not None:
         def _log_wrapper(logs, *args, **kwargs):
             try:
@@ -222,19 +206,19 @@ def main(argv=None):
                     return None
         trainer.log = _log_wrapper
 
-    print('Trainer created, starting DPO training...')
+    print("Trainer created, starting DPO training...")
     trainer.train()
 
     # save adapter or final model
-    save_dir = os.path.join(args.output_dir, 'dpo')
+    save_dir = os.path.join(args.output_dir, "dpo")
     os.makedirs(save_dir, exist_ok=True)
     try:
         trainer.save_model(save_dir)
         tokenizer.save_pretrained(save_dir)
-        print('Saved DPO model to', save_dir)
+        print("Saved DPO model to", save_dir)
     except Exception as e:
-        print('保存模型失败：', e)
+        print("保存模型失败：", e)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -35,7 +35,7 @@ def apply_template(tokenizer: Any, example: Dict) -> Dict:
         add_generation_prompt=False,
         enable_thinking=False,
     )
-    
+
     return {"text": text}
 
 

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="SFT training wrapper")
-    p.add_argument("--model_path", default='/root/autodl-tmp/models/Qwen/Qwen3-8B-Base')
+    p.add_argument("--model_path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
     p.add_argument("--train_file", default="train_sft.jsonl")
     p.add_argument("--output_dir", default="output_sft_QLoRA")
     p.add_argument("--epochs", type=int, default=2)
@@ -87,19 +87,19 @@ def main(argv: Optional[List[str]] = None) -> None:
     try:
         if len(samples) > 0:
             first = samples[0]
-            if 'messages' in first:
-                templated = tokenizer.apply_chat_template(first['messages'], tokenize=False, add_generation_prompt=False, enable_thinking=False)
-                logger.info('First sample templated (raw): %s', templated)
-                logger.info('First sample templated (repr): %s', repr(templated))
-                logger.info("Contains '<|im_end|>'?: %s", '<|im_end|>' in templated)
+            if "messages" in first:
+                templated = tokenizer.apply_chat_template(first["messages"], tokenize=False, add_generation_prompt=False, enable_thinking=False)
+                logger.info("First sample templated (raw): %s", templated)
+                logger.info("First sample templated (repr): %s", repr(templated))
+                logger.info("Contains '<|im_end|>'?: %s", "<|im_end|>" in templated)
                 # 打印分词前若干 token 供排查
                 try:
                     toks = tokenizer.tokenize(templated)
-                    logger.info('First templated tokens (first 120): %s', toks[:120])
+                    logger.info("First templated tokens (first 120): %s", toks[:120])
                 except Exception as e:
-                    logger.info('Failed to tokenize templated text: %s', e)
+                    logger.info("Failed to tokenize templated text: %s", e)
     except Exception as e:
-        logger.warning('Failed to print templated first sample: %s', e)
+        logger.warning("Failed to print templated first sample: %s", e)
 
     ds = ds.train_test_split(test_size=0.05, seed=args.seed)
 
