@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="SFT training wrapper")
-    p.add_argument("--model-path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
+    p.add_argument("--model-path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct")
     p.add_argument("--train-file", default="train_sft.jsonl")
     p.add_argument("--output-root", default="output", help="Root directory for all experiment runs")
     p.add_argument("--run-name", default=None, help="Experiment run name under output/runs")

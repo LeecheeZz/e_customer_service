@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 from transformers import AutoTokenizer, BitsAndBytesConfig, pipeline
 
 from e_customer_service.data import format_messages
-from e_customer_service.eval_utils import read_jsonl, truncate_after_punct_before_bad
+from e_customer_service.eval_utils import read_jsonl
 from e_customer_service.paths import build_run_paths, default_run_name, ensure_run_dirs
 
 
@@ -117,13 +117,12 @@ def main(argv=None):
             if isinstance(prompt, str) and out_text.startswith(prompt):
                 out_text = out_text[len(prompt):].lstrip()
 
-            cleaned = truncate_after_punct_before_bad(out_text)
             out_item = dict(item)
             if "messages" in out_item and isinstance(out_item["messages"], list):
-                assistant_msg = {"role": "assistant", "content": cleaned}
+                assistant_msg = {"role": "assistant", "content": out_text}
                 out_item["messages"] = out_item["messages"] + [assistant_msg]
             else:
-                out_item["assistant"] = cleaned
+                out_item["assistant"] = out_text
 
             out_f.write(json.dumps(out_item, ensure_ascii=False) + "\n")
 

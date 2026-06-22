@@ -16,7 +16,7 @@ pip install -r requirements.txt
 
 ```bash
 python sft.py \
-  --model-path /root/autodl-tmp/models/Qwen/Qwen3-8B-Base \
+  --model-path /root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct \
   --train-file train_sft.jsonl \
   --output-root output \
   --run-name qlora_default \
@@ -106,7 +106,7 @@ Serve the SFT LoRA adapter with the OpenAI-compatible vLLM server:
 
 ```bash
 python -m scripts.vllm_serve \
-  --base-model /root/autodl-tmp/models/Qwen/Qwen3-8B-Base \
+  --base-model /root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct \
   --output-root output \
   --run-name qlora_default \
   --stage sft \

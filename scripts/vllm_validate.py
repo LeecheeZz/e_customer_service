@@ -8,7 +8,7 @@ import urllib.request
 
 from tqdm.auto import tqdm
 
-from e_customer_service.eval_utils import read_jsonl, truncate_after_punct_before_bad
+from e_customer_service.eval_utils import read_jsonl
 from e_customer_service.paths import build_run_paths, default_run_name, ensure_run_dirs
 
 
@@ -119,7 +119,7 @@ def main(argv=None):
             generated = ""
             try:
                 response = request_chat_completion(args.base_url, payload, args.timeout)
-                generated = truncate_after_punct_before_bad(extract_generated_text(response))
+                generated = extract_generated_text(response)
                 ok_count += 1
             except (urllib.error.URLError, TimeoutError, ValueError) as e:
                 error = str(e)

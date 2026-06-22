@@ -52,7 +52,7 @@ def create_sft_config(output_dir: str, **kwargs) -> SFTConfig:
         "save_steps": 100,
         "save_total_limit": 2,
         "eval_strategy": "steps",
-        "eval_steps": 5,
+        "eval_steps": 20,
         "logging_steps": 5,
         "report_to": "none",
         "dataloader_num_workers": 4,
