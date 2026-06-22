@@ -93,6 +93,73 @@ DPO evaluation saves to:
 output/runs/qlora_default/dpo/eval/dpo_eval_outputs.jsonl
 ```
 
+
+## vLLM Serving
+
+Install vLLM in the deployment environment:
+
+```bash
+pip install -r requirements-vllm.txt
+```
+
+Serve the SFT LoRA adapter with the OpenAI-compatible vLLM server:
+
+```bash
+python -m scripts.vllm_serve \
+  --base-model /root/autodl-tmp/models/Qwen/Qwen3-8B-Base \
+  --output-root output \
+  --run-name qlora_default \
+  --stage sft \
+  --lora-name customer-service \
+  --max-lora-rank 64 \
+  --trust-remote-code
+```
+
+For a DPO adapter, change `--stage sft` to `--stage dpo`. The request model name is the LoRA name, so clients should use `customer-service`.
+
+Smoke-test one request:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "customer-service",
+    "messages": [
+      {"role": "user", "content": "我的快递显示已签收，但我没有收到货，该怎么办？"}
+    ],
+    "temperature": 0,
+    "top_p": 1,
+    "max_tokens": 256
+  }'
+```
+
+Validate the service on the project validation set:
+
+```bash
+python -m scripts.vllm_validate \
+  --base-url http://localhost:8000 \
+  --model customer-service \
+  --output-root output \
+  --run-name qlora_default \
+  --stage sft \
+  --val-file val_sft.jsonl \
+  --limit 10
+```
+
+If you already generated a Transformers reference output, compare against it:
+
+```bash
+python -m scripts.vllm_validate \
+  --base-url http://localhost:8000 \
+  --model customer-service \
+  --output-root output \
+  --run-name qlora_default \
+  --stage sft \
+  --val-file val_sft.jsonl \
+  --reference-file output/runs/qlora_default/sft/eval/sft_eval_outputs.jsonl \
+  --limit 10
+```
+
 ## Output Layout
 
 ```text
