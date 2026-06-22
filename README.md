@@ -16,13 +16,13 @@ pip install -r requirements.txt
 
 ```bash
 python sft.py \
-  --model_path /root/autodl-tmp/models/Qwen/Qwen3-8B-Base \
-  --train_file train_sft.jsonl \
-  --output_root output \
-  --run_name qlora_default \
+  --model-path /root/autodl-tmp/models/Qwen/Qwen3-8B-Base \
+  --train-file train_sft.jsonl \
+  --output-root output \
+  --run-name qlora_default \
   --epochs 2 \
-  --batch_size 2 \
-  --gradient_accumulation_steps 16 \
+  --batch-size 2 \
+  --gradient-accumulation-steps 16 \
   --qlora
 ```
 
@@ -177,4 +177,4 @@ output/runs/<run_name>/
   artifacts/
 ```
 
-Use a different `--run_name` for each experiment you want to keep separate.
+Use a different `--run-name` for each experiment you want to keep separate.

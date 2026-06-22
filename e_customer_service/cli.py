@@ -19,30 +19,30 @@ logger = logging.getLogger(__name__)
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="SFT training wrapper")
-    p.add_argument("--model_path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
-    p.add_argument("--train_file", default="train_sft.jsonl")
-    p.add_argument("--output_root", default="output", help="Root directory for all experiment runs")
-    p.add_argument("--run_name", default=None, help="Experiment run name under output/runs")
+    p.add_argument("--model-path", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Base")
+    p.add_argument("--train-file", default="train_sft.jsonl")
+    p.add_argument("--output-root", default="output", help="Root directory for all experiment runs")
+    p.add_argument("--run-name", default=None, help="Experiment run name under output/runs")
     p.add_argument(
-        "--output_dir",
+        "--output-dir",
         default=None,
-        help="Deprecated: use --output_root and --run_name instead; treated as a run name if set",
+        help="Deprecated: use --output-root and --run-name instead; treated as a run name if set",
     )
     p.add_argument("--epochs", type=int, default=2)
-    p.add_argument("--batch_size", type=int, default=2)
-    p.add_argument("--gradient_accumulation_steps", type=int, default=16)
+    p.add_argument("--batch-size", type=int, default=2)
+    p.add_argument("--gradient-accumulation-steps", type=int, default=16)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--r", type=int, default=64, help="LoRA rank")
-    p.add_argument("--lora_alpha", type=int, default=128, help="LoRA alpha")
+    p.add_argument("--lora-alpha", type=int, default=128, help="LoRA alpha")
     p.add_argument(
-        "--target_modules",
+        "--target-modules",
         nargs="+",
         default=None,
         help="LoRA target modules, separated by spaces or commas",
     )
     p.add_argument("--no-bf16", action="store_false", dest="bf16", help="Use fp16 instead of bf16")
     p.add_argument(
-        "--no-local_files_only",
+        "--no-local-files-only",
         action="store_false",
         dest="local_files_only",
         help="Allow loading model/tokenizer files from remote sources",

@@ -2,7 +2,7 @@
 """Plot training and evaluation loss from a HuggingFace/TRL trainer_state.json.
 
 Usage example:
-  python scripts/plot_losses.py --checkpoint_dir output_customer_service/checkpoint-366
+  python scripts/plot_losses.py --checkpoint-dir output_customer_service/checkpoint-366
 
 The script will look for `trainer_state.json` inside the given checkpoint dir,
 extract `log_history` entries with `loss` and `eval_loss`, draw a complete
@@ -82,8 +82,8 @@ def find_trainer_state(checkpoint_dir: str) -> str:
 
 def main():
     p = argparse.ArgumentParser(description="Plot train/val loss from trainer_state.json")
-    p.add_argument("-d", "--checkpoint_dir", required=True, help="Checkpoint directory containing trainer_state.json")
-    p.add_argument("--out_name", default="loss_curve.png", help="Output image filename (saved inside checkpoint_dir)")
+    p.add_argument("-d", "--checkpoint-dir", required=True, help="Checkpoint directory containing trainer_state.json")
+    p.add_argument("--out-name", default="loss_curve.png", help="Output image filename (saved inside checkpoint_dir)")
     p.add_argument("--title", default="Training and Validation Loss", help="Figure title")
     args = p.parse_args()
 
