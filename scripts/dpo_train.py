@@ -31,6 +31,25 @@ def messages_to_text(messages: List[dict], tokenizer, *, add_generation_prompt: 
     )
 
 
+def assistant_messages_to_completion(messages, tokenizer) -> str:
+    if isinstance(messages, str):
+        completion = messages
+    else:
+        completion_parts = [
+            message.get("content", "")
+            for message in messages
+            if message.get("role") == "assistant"
+        ]
+        if not completion_parts and messages:
+            completion_parts = [messages[-1].get("content", "")]
+        completion = "\n".join(part for part in completion_parts if part).strip()
+
+    eos_token = tokenizer.eos_token or ""
+    if eos_token and not completion.endswith(eos_token):
+        completion = completion + eos_token
+    return completion
+
+
 def build_dataset(dpo_file: str, tokenizer):
     examples = []
     for obj in read_pairs(dpo_file):
@@ -39,8 +58,8 @@ def build_dataset(dpo_file: str, tokenizer):
         rejected_msgs = obj.get("rejected") or obj.get("worst") or []
 
         prompt = messages_to_text(prompt_msgs, tokenizer, add_generation_prompt=True)
-        chosen = messages_to_text(chosen_msgs, tokenizer)
-        rejected = messages_to_text(rejected_msgs, tokenizer)
+        chosen = assistant_messages_to_completion(chosen_msgs, tokenizer)
+        rejected = assistant_messages_to_completion(rejected_msgs, tokenizer)
 
         examples.append({
             "prompt": prompt,
@@ -156,13 +175,24 @@ def main(argv=None):
         },
     )
 
-    trainer = DPOTrainer(
-        model=model,
-        ref_model=None,
-        args=dpo_args,
-        train_dataset=dataset,
-        tokenizer=tokenizer,
-    )
+    trainer_kwargs = {
+        "model": model,
+        "ref_model": None,
+        "args": dpo_args,
+        "train_dataset": dataset,
+    }
+    try:
+        trainer = DPOTrainer(
+            **trainer_kwargs,
+            processing_class=tokenizer,
+        )
+    except TypeError as e:
+        if "processing_class" not in str(e):
+            raise
+        trainer = DPOTrainer(
+            **trainer_kwargs,
+            tokenizer=tokenizer,
+        )
 
     orig_log = getattr(trainer, "log", None)
     if orig_log is not None:
