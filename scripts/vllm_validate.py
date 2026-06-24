@@ -99,6 +99,9 @@ def main(argv=None):
         references = references[: args.limit]
 
     ok_count = 0
+    total_latency = 0.0
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
     comparable_count = 0
     exact_match_count = 0
     normalized_match_count = 0
@@ -135,6 +138,10 @@ def main(argv=None):
                 out_item["error"] = error
             if response is not None:
                 out_item["raw_response"] = response
+                usage = response.get("usage") or {}
+                total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
+                total_completion_tokens += int(usage.get("completion_tokens") or 0)
+                total_latency += out_item["latency_seconds"]
 
             if idx < len(references):
                 reference_text = extract_reference_text(references[idx])
@@ -156,6 +163,10 @@ def main(argv=None):
 
     print(f"vLLM validation saved to {out_path}")
     print(f"Succeeded: {ok_count}/{len(rows)}")
+    if ok_count and total_latency > 0:
+        print(f"Avg latency: {total_latency / ok_count:.4f}s")
+        print(f"Prompt throughput: {total_prompt_tokens / total_latency:.2f} tokens/s")
+        print(f"Generation throughput: {total_completion_tokens / total_latency:.2f} tokens/s")
     if comparable_count:
         print(f"Exact matches: {exact_match_count}/{comparable_count}")
         print(f"Normalized matches: {normalized_match_count}/{comparable_count}")

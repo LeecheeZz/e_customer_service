@@ -36,6 +36,14 @@ def build_command(args):
         cmd.extend(["--tensor-parallel-size", str(args.tensor_parallel_size)])
     if args.gpu_memory_utilization is not None:
         cmd.extend(["--gpu-memory-utilization", str(args.gpu_memory_utilization)])
+    if args.max_model_len is not None:
+        cmd.extend(["--max-model-len", str(args.max_model_len)])
+    if args.quantization:
+        cmd.extend(["--quantization", args.quantization])
+    if args.load_format:
+        cmd.extend(["--load-format", args.load_format])
+    if args.model_loader_extra_config:
+        cmd.extend(["--model-loader-extra-config", args.model_loader_extra_config])
     if args.trust_remote_code:
         cmd.append("--trust-remote-code")
 
@@ -44,7 +52,7 @@ def build_command(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Serve the customer-service LoRA adapter with vLLM")
-    parser.add_argument("--base-model", required=True, help="Base model path used by the LoRA adapter")
+    parser.add_argument("--base-model", default="/root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct", help="Base model path used by the LoRA adapter")
     parser.add_argument("--output-root", default="output", help="Root directory for experiment runs")
     parser.add_argument("--run-name", default=None, help="Experiment run name under output/runs")
     parser.add_argument("--stage", choices=["sft", "dpo"], default="sft", help="Adapter stage to serve")
@@ -57,6 +65,10 @@ def main(argv=None):
     parser.add_argument("--dtype", default="bfloat16")
     parser.add_argument("--tensor-parallel-size", type=int, default=None)
     parser.add_argument("--gpu-memory-utilization", type=float, default=None)
+    parser.add_argument("--max-model-len", type=int, default=None)
+    parser.add_argument("--quantization", default=None, help="vLLM quantization backend, e.g. awq, gptq, bitsandbytes")
+    parser.add_argument("--load-format", default=None, help="vLLM load format, e.g. auto, awq, gptq, bitsandbytes")
+    parser.add_argument("--model-loader-extra-config", default=None, help="JSON string passed to vLLM model loader")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Print the vLLM command without starting it")
     args = parser.parse_args(argv)

@@ -108,11 +108,13 @@ Serve the SFT LoRA adapter with the OpenAI-compatible vLLM server:
 python -m scripts.vllm_serve \
   --base-model /root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct \
   --output-root output \
-  --run-name qlora_default \
-  --stage sft \
+  --run-name qlora_qkvo_r64 \
+  --stage dpo \
   --lora-name customer-service \
   --max-lora-rank 64 \
   --trust-remote-code
+  --max-model-len 4096 
+  --gpu-memory-utilization 0.80
 ```
 
 For a DPO adapter, change `--stage sft` to `--stage dpo`. The request model name is the LoRA name, so clients should use `customer-service`.
@@ -140,10 +142,11 @@ python -m scripts.vllm_validate \
   --base-url http://localhost:8000 \
   --model customer-service \
   --output-root output \
-  --run-name qlora_default \
-  --stage sft \
+  --run-name qlora_qkvo_r64 \
+  --stage dpo \
   --val-file val_sft.jsonl \
-  --limit 10
+  --limit 100 \
+  --out-file vllm_eval.jsonl
 ```
 
 If you already generated a Transformers reference output, compare against it:
