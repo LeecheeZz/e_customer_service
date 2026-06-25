@@ -187,3 +187,49 @@ output/runs/<run_name>/
 ```
 
 Use a different `--run-name` for each experiment you want to keep separate.
+
+## API Gateway
+
+The optional FastAPI gateway routes each user query by intent before calling the downstream service:
+
+```text
+User query
+  -> FastAPI gateway
+  -> intent classification
+  -> customer_service: Redis hot-question cache -> customer vLLM
+  -> research_report: report RAG retrieval -> report vLLM -> answer with citations
+```
+
+Install the gateway dependencies:
+
+```bash
+pip install -r requirements-gateway.txt
+```
+
+Start the gateway:
+
+```bash
+uvicorn e_customer_service.api_gateway.main:app --host 0.0.0.0 --port 8080
+```
+
+Useful environment variables:
+
+```bash
+export REDIS_URL=redis://localhost:6379/0
+export CUSTOMER_VLLM_BASE_URL=http://localhost:8000
+export CUSTOMER_MODEL=customer-service
+export REPORT_VLLM_BASE_URL=http://localhost:8000
+export REPORT_MODEL=customer-service
+export RAG_URL=http://localhost:8010/retrieve
+```
+
+Request example:
+
+```bash
+curl http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "双11能叠加优惠券吗",
+    "user_id": "u_001"
+  }'
+```
