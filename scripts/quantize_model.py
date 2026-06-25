@@ -17,8 +17,8 @@ from e_customer_service.data import format_messages
 from e_customer_service.eval_utils import read_jsonl
 
 
-DEFAULT_BASE_MODEL = "/root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct"
-DEFAULT_OUTPUT_ROOT = "/root/autodl-tmp/models/Qwen"
+DEFAULT_BASE_MODEL = "/media/ssd2/lyf/le/models/Qwen/Qwen3-8B-Instruct"
+DEFAULT_OUTPUT_ROOT = "/media/ssd2/lyf/le/models/Qwen"
 
 
 def read_calibration_texts(path: str, tokenizer, limit: int, enable_thinking: bool) -> List[str]:

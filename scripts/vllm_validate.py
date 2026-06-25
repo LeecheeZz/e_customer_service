@@ -77,6 +77,8 @@ def main(argv=None):
     parser.add_argument("--val-file", default="val_sft.jsonl")
     parser.add_argument("--out-file", default="vllm_eval_outputs.jsonl")
     parser.add_argument("--reference-file", default=None, help="Optional JSONL output to compare against")
+    parser.add_argument("--quantization-label", default=None, help="Optional label recorded in each output row")
+    parser.add_argument("--disable-thinking", action="store_true", help="Pass enable_thinking=false to Qwen-style chat templates")
     parser.add_argument("--limit", type=int, default=10, help="Number of samples to validate; use 0 for all")
     parser.add_argument("--max-tokens", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.0)
@@ -115,6 +117,8 @@ def main(argv=None):
                 "top_p": args.top_p,
                 "max_tokens": args.max_tokens,
             }
+            if args.disable_thinking:
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
 
             started = time.perf_counter()
             error = None
@@ -130,6 +134,7 @@ def main(argv=None):
             out_item = dict(item)
             out_item.update({
                 "vllm_model": args.model,
+                "quantization_label": args.quantization_label,
                 "vllm_messages": messages,
                 "assistant": generated,
                 "latency_seconds": round(time.perf_counter() - started, 4),

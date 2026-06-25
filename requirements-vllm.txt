@@ -1,6 +1,16 @@
---extra-index-url https://download.pytorch.org/whl/cu128
+vllm==0.23.0
 
-torch==2.10.0+cu128
-torchvision==0.25.0+cu128
-torchaudio==2.10.0+cu128
-vllm==0.19.0
+torch==2.11.0
+torchvision==0.26.0
+torchaudio==2.11.0
+
+transformers==5.12.1
+tokenizers==0.22.2
+safetensors==0.8.0
+sentencepiece==0.2.1
+
+compressed-tensors==0.17.0
+flashinfer-python==0.6.12
+flashinfer-cubin==0.6.12
+
+openai==2.43.0

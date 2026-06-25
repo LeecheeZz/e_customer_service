@@ -1,10 +1,38 @@
 #!/usr/bin/env python3
 import argparse
+import json
+from pathlib import Path
 import shlex
 import subprocess
 import sys
 
 from e_customer_service.paths import build_run_paths, default_run_name
+
+
+def apply_quantization_manifest(args):
+    if not args.use_quantization_manifest:
+        return
+
+    manifest_path = Path(args.quantization_manifest or Path(args.base_model) / "quantization_manifest.json")
+    if not manifest_path.exists():
+        raise SystemExit(f"quantization manifest not found: {manifest_path}")
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    vllm_args = manifest.get("vllm_args") or []
+    for key, value in zip(vllm_args[0::2], vllm_args[1::2]):
+        if key == "--quantization" and args.quantization is None:
+            args.quantization = value
+        elif key == "--load-format" and args.load_format is None:
+            args.load_format = value
+        elif key == "--dtype" and args.dtype is None:
+            args.dtype = value
+        elif key == "--model-loader-extra-config" and args.model_loader_extra_config is None:
+            args.model_loader_extra_config = value
+
+    if args.quantization_label is None:
+        args.quantization_label = manifest.get("method")
 
 
 def build_command(args):
@@ -66,15 +94,21 @@ def main(argv=None):
     parser.add_argument("--tensor-parallel-size", type=int, default=None)
     parser.add_argument("--gpu-memory-utilization", type=float, default=None)
     parser.add_argument("--max-model-len", type=int, default=None)
-    parser.add_argument("--quantization", default=None, help="vLLM quantization backend, e.g. awq, gptq, bitsandbytes")
+    parser.add_argument("--quantization", default=None, help="vLLM quantization backend, e.g. awq, gptq, compressed-tensors, bitsandbytes")
     parser.add_argument("--load-format", default=None, help="vLLM load format, e.g. auto, awq, gptq, bitsandbytes")
     parser.add_argument("--model-loader-extra-config", default=None, help="JSON string passed to vLLM model loader")
+    parser.add_argument("--use-quantization-manifest", action="store_true", help="Read vLLM args from <base-model>/quantization_manifest.json")
+    parser.add_argument("--quantization-manifest", default=None, help="Optional explicit quantization manifest path")
+    parser.add_argument("--quantization-label", default=None, help="Free-form label printed for experiment tracking")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Print the vLLM command without starting it")
     args = parser.parse_args(argv)
 
+    apply_quantization_manifest(args)
     cmd = build_command(args)
     print("Running:")
+    if args.quantization_label:
+        print(f"Quantization label: {args.quantization_label}")
     print(shlex.join(cmd))
     if args.dry_run:
         return

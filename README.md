@@ -105,16 +105,19 @@ pip install -r requirements-vllm.txt
 Serve the SFT LoRA adapter with the OpenAI-compatible vLLM server:
 
 ```bash
-python -m scripts.vllm_serve \
-  --base-model /root/autodl-tmp/models/Qwen/Qwen3-8B-Instruct \
+CUDA_VISIBLE_DEVICES=0,1 python -m scripts.vllm_serve \
+  --base-model /media/ssd2/lyf/le/models/Qwen/Qwen3-8B-AWQ-W4A16 \
+  --use-quantization-manifest \
   --output-root output \
-  --run-name qlora_qkvo_r64 \
+  --run-name qlora_qkvo_r32 \
   --stage dpo \
   --lora-name customer-service \
-  --max-lora-rank 64 \
-  --trust-remote-code
-  --max-model-len 4096 
-  --gpu-memory-utilization 0.80
+  --max-lora-rank 32 \
+  --port 8000 \
+  --trust-remote-code \
+  --max-model-len 4096  \
+  --gpu-memory-utilization 0.85 \
+  --tensor-parallel-size 2
 ```
 
 For a DPO adapter, change `--stage sft` to `--stage dpo`. The request model name is the LoRA name, so clients should use `customer-service`.
@@ -142,11 +145,14 @@ python -m scripts.vllm_validate \
   --base-url http://localhost:8000 \
   --model customer-service \
   --output-root output \
-  --run-name qlora_qkvo_r64 \
+  --run-name qlora_qkvo_r32 \
   --stage dpo \
   --val-file val_sft.jsonl \
   --limit 100 \
-  --out-file vllm_eval.jsonl
+  --max-tokens 512 \
+  --out-file vllm_gptq_eval.jsonl \
+  --quantization-label gptq \
+  --disable-thinking
 ```
 
 If you already generated a Transformers reference output, compare against it:
